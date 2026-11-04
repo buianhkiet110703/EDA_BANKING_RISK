@@ -5,7 +5,7 @@ You are a Data Analyst working for an e-commerce company called X. You are given
 # II. Analysis
 
 ### Business situation of the company
-### 1. Business situation by year and month of the company (Tình hình kinh doanh theo năm và tháng của công ty)
+### 1. Business situation by year and month of the company
 
 ```php
 import matplotlib.ticker as mtick
