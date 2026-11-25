@@ -1,337 +1,163 @@
-# I. Background 
-You are a Data Analyst working for an e-commerce company called X. You are given the standard task of giving a presentation to present an overview of the business and operations of the computer company. Up to the present time at for Sales Manager and Operations Manager. The presentation should at a minimum, include the following information: business overview, customer satisfaction, and 2 to 3 suggestions (area) where the company can improve.
+# Credit Risk Analysis – Home Credit Default Risk
 
+**Which loan applicants are most likely to default, and how can a lender use that to make better credit decisions?**
 
-# II. Analysis
-
-### Business situation of the company
-### 1. Business situation by year and month of the company
+An end-to-end credit risk analysis of **307,511 loan applications** in Python: data cleaning, exploratory analysis of default drivers, Credit Bureau history, and a simple, interpretable scoring model that splits clients into risk segments for the Credit Risk team.
 
-```php
-import matplotlib.ticker as mtick
-from pandas.plotting import register_matplotlib_converters
-register_matplotlib_converters()
+**Tools:** Python · pandas · NumPy · Matplotlib · Seaborn · scikit-learn  
+**Data:** [Home Credit Default Risk (Kaggle)](https://www.kaggle.com/competitions/home-credit-default-risk)  
+**Full analysis:** [`EAD BANK RISK.ipynb`](EAD%20BANK%20RISK.ipynb)
 
-ax = turnover.T.plot.bar(figsize=(15,10), xlabel="Years", ylabel="Payment_value", color=sns.color_palette('Set2'))
-ax.yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
-ax.set_xlabel('Years',fontsize=20)
-ax.set_ylabel('Payment Value', fontsize=20)
-ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha='center')
-plt.show()
-```
-![image](https://user-images.githubusercontent.com/110837675/226807037-ff44e509-7594-4bad-8253-4e75370a6508.png)
+---
 
-#### A. Business situation by year 
-```php
-import plotly.express as px
+## Key Results
 
-turnover_year = df.groupby('year')['payment_value'].sum().reset_index()
+| | |
+|---|---|
+| **8.1%** | portfolio default rate (24,825 of 307,511 loans) |
+| **11×** | difference in default rate between the lowest (22.9%) and highest (2.0%) external credit score deciles |
+| **2×** | higher default rate for clients employed < 2 years (11.2%) vs 10+ years (5.2%) |
+| **0.74** | ROC AUC of the scoring model (Gini 0.49) |
+| **50%** | of all defaults are found by reviewing only the riskiest **20%** of applications |
 
-fig = px.bar(turnover_year, x='year', y='payment_value', title='Revenue By Month')
+![Risk segments](images/14_risk_segments.png)
 
-fig.update_layout(xaxis=dict(type='category'),width=900,height=700,font=dict(color='black'))
-fig.update_traces(marker=dict(line=dict(width=50)),text=turnover_year['payment_value'],textfont=dict(color='black'))
-fig.show()
-```
-output:
+---
 
-![image](https://user-images.githubusercontent.com/110837675/226799131-02b61b01-05c8-45e6-a4b2-9925f390ec04.png)
+## 1. Business Questions
 
- The company's business situation over the years has grown stronger, the revenue source has increased rapidly over the years, in 2016 the revenue was only $18202,78 USD, in 2017 the revenue increased to $2124535.1 USD (revenue). And by September 2018 the revenue was $2659783,53 (September 2018 revenue grew by 25.2% compared to 2017). Therefore, the company has grown very strong, the number of sales orders in recent years has increased a lot, bringing a lot of revenue to the company.
- 
- 
-=> The company's high revenue shows that the company's business situation has improved and developed strongly over the years.
+Acting as a **Data Analyst in a Credit Risk team**, reporting to the **Credit Risk Manager**:
 
+1. What does the loan portfolio look like, and what is the overall level of risk?
+2. Which client characteristics are most strongly linked to default?
+3. Does credit history from other lenders (Credit Bureau) help predict risk?
+4. How can clients be grouped into **low / medium / high** risk segments to support lending decisions?
 
-#### B. Business situation by month
+## 2. Data
 
-```php
-import plotly.express as px
-turnover_month= df.groupby('month')['payment_value'].sum().reset_index()
-fig= px.line(turnover_month,x='month',y='payment_value', markers=True, title='Revenue By Month')
-fig.update_traces(marker=dict(line=dict(width=10)),text=turnover_year['payment_value'],textfont=dict(color='black'))
-fig.show()
-```
-output:
+| Table | Rows | Description |
+|---|---|---|
+| `application_train.csv` | 307,511 | One row per loan application – client profile, loan details and `TARGET` (1 = default) |
+| `bureau.csv` | 1,716,428 | Client's previous loans at other financial institutions |
+| `HomeCredit_columns_description.csv` | – | Data dictionary |
 
-![image](https://user-images.githubusercontent.com/110837675/226800408-c21a3a11-4462-4032-9317-4da4328bb53d.png)
+> The raw data files are not stored in this repository (GitHub file size limit). Download them from Kaggle and place them next to the notebook to re-run the analysis.
 
-- Revenue from January to August generally has a uniform growth, and August revenue has a marked increase compared to the previous months, but this is only September 2018 not enough data to evaluate. Prices in the months after September 2018, but it can be seen that the increase in monthly revenue shows that the company has a good development.
+## 3. Data Cleaning & Feature Engineering
 
+- **Missing values:** 67 of 122 columns had gaps. I dropped 48 columns with > 40% missing values (mostly building characteristics), but **kept the external credit scores** `EXT_SOURCE_1` / `EXT_SOURCE_3` because they are key risk indicators.
+- **Placeholder values:** `DAYS_EMPLOYED = 365243` (≈ 1,000 years) appeared in 18% of rows – only for pensioners and unemployed clients. I replaced it with `NaN` and kept the information as a `NOT_EMPLOYED` flag.
+- **Outliers:** capped annual income at the 99.9th percentile (max was 117 million vs a median of 147k).
+- **New features** used in real credit assessment: age, years employed, loan-to-income, **annuity-to-income (DTI)**, **loan-to-goods-price (LTV-style)**, and a combined external score.
 
-### 2. Top product groups (product_category_name) bring the most revenue for the company 
+![Missing values](images/01_missing_values.png)
 
-```php
-import plotly.graph_objs as go
+## 4. Portfolio Overview
 
-fig = go.Figure(
-    data=[go.Pie(labels=product['product_category_name'], values=product['payment_value'], pull=[0.09, 0])])
-fig.update_layout(title="Percentage Revenue By Product_Category",width=1140, height=600, legend_title_text='Product Category Name')
-fig.show()
-```
-Output:
+![Portfolio overview](images/02_portfolio_overview.png)
 
-![image](https://user-images.githubusercontent.com/110837675/226800499-02eee2f8-bd62-4642-87a1-cdd38a08da9e.png)
+- **~90%** of loans are cash loans, the rest are revolving loans.
+- A typical client earns **~147k** a year and borrows **~3.3× their annual income**.
+- Income and loan amounts are right-skewed, so medians are used throughout.
 
-The product groups above the graphic are the best-selling and highest-recall product groups for the company. Those are the strong products of the company store because the company's revenue is mainly due to those product groups falling behind. Therefore, we need to focus more resources to develop our company's strong products. The following ideas can be developed:
- 
+## 5. What Drives Default?
 
-- After knowing the company's strong selling product groups, you can:
-  
-  -Product ecosystem development. More specifically, focus on building, supporting products, auxiliary products or accessories for these top products.
-  
-  -Provide vouchers for ancillary products (ecosystem) when buying top products, to stimulate demand they can buy additional accessories.
-  
-### 3. Number of orders delivered successfully and canceled (Số đơn hàng giao thành công và bị hủy)
+Each chart compares the **default rate within a group** with the **portfolio average (8.1%)**. Red = above average, blue = below average.
 
-```php
-fig= px.pie(values=delivered['proportion'],names=delivered.index, hole=.3, title='Order Status')
-fig.update_layout(annotations=[dict(text='Status', x=0.50, y=0.5, font_size=20, showarrow=False)])
-fig.update_layout(
-    width=1140,
-    height=600, legend_title_text='Status')
-fig.show()
-```
-![image](https://user-images.githubusercontent.com/110837675/226800799-a2f2e271-d275-4073-9ae8-f8d23e0f2243.png)
+### External credit score – the strongest signal
+![Default by external score](images/11_default_by_ext_source.png)
 
--Looking at the Graphic , the number of canceled orders is 123 orders, accounting for45.89% of the total number of successfully delivered orders, we need to find out the reason why the orders are canceled for any reason and from there we need to fix it. To minimize the number of canceled orders. These are the customer ids who cancel the most orders:
+Default rate falls from **22.9%** in the lowest score decile to **2.0%** in the highest – an **11×** difference. Any approval rule should be built primarily on this score.
 
-```php
-fig= px.pie(values=customer_cancel['order_status'],names=customer_cancel['customer_id'], hole=.3, title='CustomerId_Cancel')
-fig.update_layout(annotations=[dict(text='Cancel', x=0.50, y=0.5, font_size=20, showarrow=False)])
-fig.update_layout(
-    width=1140,
-    height=600,legend_title_text='Customer_id')
-```
+### Age and employment stability
+![Default by age](images/03_default_by_age.png)
+![Default by employment](images/04_default_by_employment.png)
 
-![image](https://user-images.githubusercontent.com/110837675/226801089-a5d3fdbf-c57c-47fe-9fa2-17dcaac9eb4c.png)
+- Risk **falls steadily with age**: clients aged 20–25 default **2.5× more often** than clients aged 60+.
+- Clients employed **< 2 years** default about **2× more often** than those employed 10+ years.
 
-   -These are the customer ids with the most order cancellations, need to find out the reason for canceling orders from them, and we should also warn them to help them reduce the cancellation rate by is that the promotional vouchers for these people will be limited and they are unlikely to receive much discount vouchers, or the shipping time will be longer than expected, and the order account will be limited. In some articles, which have been cancelled a lot...
+> Age is a sensitive attribute – in the EU it should not be the sole reason to reject a loan, so it is treated as a signal to monitor, not a decision rule.
 
+### Income type, education and occupation
+![Default by income type](images/05_default_by_income_type.png)
+![Default by education](images/06_default_by_education.png)
+![Default by occupation](images/07_default_by_occupation.png)
 
-### 4. Payments
+- **Pensioners** and **state servants** are the safest groups (~5.5%) thanks to stable income.
+- **Higher education** is linked to almost **2× lower** risk than lower secondary education.
+- **Low-skill laborers** have the highest risk (**17.2%**), followed by drivers, waiters and security staff. Accountants and managers have the lowest.
 
-```php
-payment_type= df.groupby('payment_type')['customer_id'].count().reset_index()
-fig= px.bar(payment_type, x="payment_type",y='customer_id',title='Payment Type of customer')
-fig.update_layout(xaxis=dict(type='category'), width=1000, height=700)
-fig.update_traces(marker=dict(line=dict(width=0.6)))
-fig.show()
-```
-Output:
+### Repayment burden, loan size and region
+![Default by DTI](images/08_default_by_dti.png)
+![Default by LTV](images/09_default_by_ltv.png)
+![Default by region](images/10_default_by_region.png)
 
-![image](https://user-images.githubusercontent.com/110837675/226801448-ac80ff3e-8f51-43fe-87ba-bffb73d80567.png)
+- The repayment burden (DTI) separates risk **only weakly** – high DTI is probably already filtered out at approval.
+- Clients who **borrow more than 120% of the goods price** default **11.7%** of the time vs **6.7%** when the loan ≤ the price.
+- Clients from the weakest-rated regions default **2.4×** more often than those from the best-rated regions.
 
+### Correlation summary
+![Correlation with target](images/12_correlation_with_target.png)
 
--Based on the chart, the form of payment that customers use the most to pay is credit_card, because people often have the habit of shopping online with credit cards.
+## 6. Credit Bureau History
 
-=>The goal is to minimize cash transactions. Prioritize payment via credit card/debit card to minimize the rate of customers not receiving the goods.
+![Bureau history](images/13_bureau_history.png)
 
-=> Create promotions that apply to credit/debit card payments. (Tạo các chương trình ưu đãi áp dụng cho hình thức thanh toán bằng thẻ tín dụng/ghi nợ.)
+- More **active loans at other lenders** means higher risk – **13.4%** for clients with 6+ active loans.
+- **Past late payments** raise risk (10.1% with 2+ late loans vs 7.1% with none).
+- Clients with **no credit history** (*thin file*) are also above average (**10.1%**) – the lender simply knows less about them.
 
+## 7. Risk Segmentation – Scoring Model
 
-### 5. Customer review title (Tiêu đề đánh giá của khách hàng)
+A **logistic regression** model (the industry standard for credit scorecards – easy to explain to regulators) combines 48 features into one risk score.  
+**Gender and age are deliberately excluded** from the model as protected attributes.
 
-```php
-tile=df['review_comment_title'].value_counts().nlargest(10).reset_index()
-fig = px.treemap(tile, path=[px.Constant('Review Comment Title'),'index'], values='review_comment_title')
-fig.show()
-```
-Output:
+| Segment | Share of applications | Default rate | Share of all defaults |
+|---|---|---|---|
+| Low risk | 60% | 3.7% | 27% |
+| Medium risk | 30% | 10.9% | 41% |
+| **High risk** | **10%** | **25.9%** | **32%** |
 
-![image](https://user-images.githubusercontent.com/110837675/226882999-87545479-1d8d-4153-a0ee-63cc66b862bd.png)
+![Gains curve](images/15_gains_curve.png)
 
+Reviewing the riskiest **10% / 20% / 30%** of applications captures **32% / 50% / 63%** of all defaults.
 
-Translate the meanings of the words in the graphic 
+![Model coefficients](images/16_model_coefficients.png)
 
--Recomendo: Recommendation
+## 8. Recommendations
 
--Bom: Good
+1. **3-tier decision path based on the score**
+   - *Low risk* → fast, automated approval
+   - *Medium risk* → standard verification
+   - *High risk* → manual review, lower loan amount or collateral
+2. **Limit extra amounts added to the loan** (loan > goods price) for medium- and high-risk clients.
+3. **A dedicated policy for thin-file clients** – a smaller first loan and gradual limit increases after on-time repayments, instead of automatic rejection.
+4. **Monitor the portfolio on a dashboard** – default rate by segment, occupation, region and employment length, with alerts when a segment crosses a threshold.
 
--super recomendo: should try 
+## 9. Limitations & Next Steps
 
--Excelente: The products are supper good
+- No loan issue dates → no vintage or time-trend analysis.
+- Only approved applications are available → no *reject inference*.
+- The model is intentionally simple; gradient boosting could raise AUC at the cost of transparency.
+- **Next:** add `previous_application` and `installments_payments`, and build an interactive **Power BI** dashboard.
 
--Muito bom : very good
+## How to Run
 
-- Looking at the data table, recomendo and super recomendo are rated by customers quite a lot, which shows that seller_id's products are not really good.
- advised and suggested by customers to correct, the sales people should approach and take care of them to find out the cause of the bad products, then absorb and improve the product to match the needs. from buyers, thereby increasing sales revenue.
-
-
-- For products that are well-reviewed by customers, it is advisable to continue to maintain the quality of that product and continue to develop higher quality to earn more revenue. 
-
-### 6.Customer Satisfaction Level. (Mức Độ Hài Lòng của khách hàng.)
-
-```php
-fig = go.Figure(data=[go.Pie(labels=star['review_score'], values=star['count'], pull=[0.1, 0.2, 0, 0, 0])])
-fig.update_layout(title="Number of star customer evaluate")
-fig.update_layout(height=600, width=1130,legend_title_text='Star')
-fig.show()
-```
-Output:
-
-![image](https://user-images.githubusercontent.com/110837675/226801881-81e6d259-88f7-4eea-85dc-a801d5ee5dbb.png)
-
--For product groups that are rated 1 and 2 points, we need to reconsider, need to find out the reason, and consider which product group 1,2 reviews come from / seller id, thereby improving product quality to meet the needs of customers.
-
-### 7. List of product groups rated 1 and 2 points
-
-```php
-
-star12 = df.loc[(df['review_score'] == 1) | (df['review_score'] == 2)]
-star12 = pd.crosstab(star12.product_category_name, star12.review_score).sort_values(by=1, ascending=False)
-star12 = star12.nlargest(columns=[1,2], n=3)
-
-fig = px.bar(star12, x=star12.index, y=[1,2], labels={'x': 'Product Category', 'y': 'Number of Reviews'})
-fig.update_layout(title="Number of 1- and 2-Star Reviews By Product Category", legend_title_text='star')
-fig.show()
-```
-Output:
-
-![image](https://user-images.githubusercontent.com/110837675/226807507-4a83294f-9d88-441b-a40e-7060f864493c.png)
-
-These are graphic of top 3 product groups that are rated 1 and 2 points. (Đây là những danh sách nhóm sản phẩm bị đánh giá 1 và 2 điểm.)
-
-Step 1: We have to find out the reason from the seller id (seller_id) why customers rate 1 and 2 points.
-
-Step 2: We need to collect customer feedback, find out the reason. 
-
-Step 3: Categorize the cause. Is a bad review due to a bad product or bad service? If it is due to the product, consider improving the quality of the product, or removing the product from the sales list. If it is due to poor service quality, it is necessary to find out and work with the supplier.
-
-Step 4: If the reason for evaluating 1 2 points is legitimate, it is necessary to take measures to compensate the customer. It is possible to compensate with an email voucher to apologize, promising to improve service/product quality.
-
-
-### 8. List of seller ids with 1 and 2 star reviews. 
-
-```php
-star12 = df.loc[(df['review_score'] == 1) | (df['review_score'] == 2)]
-star12= star12.groupby('seller_id')['review_score'].count().sort_values(ascending=False).nlargest(5).reset_index()
-fig = go.Figure(data=[go.Pie(labels=star12['seller_id'], values=star12['review_score'],pull=[0, 0.1, 0, 0, 0])])
-fig.update_layout(title="1 And 2 Rated Star Of Seller Id")
-fig.update_layout(height=600, width=1130, legend_title_text='Seller_id')
-fig.show()
-```
-Output:
-
-![image](https://user-images.githubusercontent.com/110837675/226802119-772f396f-b894-4a64-8a3b-c67db9bf3a81.png)
-
-These are top5 the seller id  with the highest ratings of 1 and 2. In this case, the company needs 
-
-Step 1: Classify the causes from rating 1 and 2 points. 
-
-Step 2: Ask the seller to explain about the rating of 1 or 2 points. Seller needs to present the way to remedy the consequences, improve the product/service and commit to doing so.
-
-Step 3: Compensate customers with bad experiences. (voucher, refund, product exchange, ...)
-
-Step 4: Evaluate the seller's ability. If the rating of 1 or 2 points is too much, the seller does not improve the product or service => ban id seller.
- 
-And should warn seller id, when being rated 1 and 2 stars, that low score will be pushed up and will bring trouble to other customers when they see such low score, they will lose faith in the product. Doubts about quality and do not make a purchase decision will make sales go down, orders will not be sold much anymore, and especially they have to improve their own products.
-
-
-### 9. Customers with the most orders.
-
-```php
-df['payment_installments']= df['payment_installments'].apply(lambda x:'pay one' if x ==1 else 'pay installments')
-top_10_customers = df['customer_id'].value_counts().head(10)
-top_10_df = df[df['customer_id'].isin(top_10_customers.index)]
-fig = px.histogram(top_10_df, x='customer_id', color='payment_installments',title='Customer ID have most order')
-fig.update_layout(width=1150, height= 700)
-fig.show()
-```
-Output:
-
-![image](https://user-images.githubusercontent.com/110837675/226802365-743c07ea-c439-4629-8994-4e8f525025ed.png)
-
-- This is a graphic of top 10 customers with the highest number of orders at the company, they are the ones who believe in the company's products, so it is necessary to pay attention to taking care of them regularly so that they do not leave buying products from the company. own company.
-
-
-Usually, consumers tend to choose to buy in bulk. Therefore, when a business satisfies the existing group of customers, these people will act as intermediaries to introduce products / services to their acquaintances. Unwittingly, loyal customers have become salespeople for the products of the businesses they trust. This will be vital to business enterprises in the 4.0 era, where the power of word-of-mouth marketing is being blown along with the development of the internet. Almost just need to take good care of existing customers, will have more new customers.
-Treatments may include:
-
-
--	Give vouchers to customers when reaching spending levels according to each milestone. 
--	Email inquires when customers do not buy goods for a long time. 
-
-
-### 10. List of customers who bring the highest revenue for the company. 
-
-```php
-df_sorted = df.groupby('customer_id')['payment_value'].sum().sort_values(ascending= False).reset_index().nlargest(columns='payment_value',n=10)
-df_sorted['cumulative_percent'] = 100 * df_sorted['payment_value'].cumsum() / df_sorted['payment_value'].sum()
-# create the bar chart for the payment values
-bar_chart = go.Bar(x=df_sorted['customer_id'], y=df_sorted['payment_value'])
-
-# create the line chart for the cumulative percentage
-line_chart = go.Scatter(x=df_sorted['customer_id'], y=df_sorted['cumulative_percent'], yaxis='y2', name='% Cumulative')
-# set the layout for the chart
-layout = go.Layout(title='Top 10 Customers Who Bring Highest Revenue', yaxis=dict(title='Payment Value'), yaxis2=dict(title='% Cumulative', overlaying='y', side='right'), width=1150, height=600, margin=dict(l=50, r=50, b=50, t=50), plot_bgcolor='#f8f8f8')
-# create the figure and plot the chart
-fig = go.Figure(data=[bar_chart, line_chart], layout=layout)
-fig.show()
+```bash
+pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+# download application_train.csv, bureau.csv and HomeCredit_columns_description.csv from Kaggle
+# into the project folder (file names used in the notebook: application_train_.csv, bureau.csv)
+jupyter notebook "EAD BANK RISK.ipynb"
 ```
 
-![image](https://user-images.githubusercontent.com/110837675/226802529-83dae0be-4855-4ec9-89de-b671e407bec5.png)
+## Repository Structure
 
--These are the top 10 customers that bring the main revenue to the company, we need to pay special attention and care to these customers so that they do not leave our services, and need to create promotional vouchers. Best forever to encourage them to buy their products, because they are the main source of income for the company, if not well taken care of, they will leave then the company's revenue will go down. Although customers order from the company a lot, but based on the Pareto chart, it can be seen that only 20% of those customers bring in 80% of the company's profits, so it is necessary to take special care of these customers.
-
-### 11. Percentage of customers paying in a lump sum and one-time payment.
-
-```php
-fig= px.pie(values=tile['payment_installments'],names=tile['index'], hole=.3, title='Paying in a lump sum and one-time payment')
-fig.update_layout(annotations=[dict(text='Payments', x=0.50, y=0.5, font_size=20, showarrow=False)])
-fig.update_layout(
-    width=1140,
-    height=600, legend_title_text='Payments')
-fig.show()
 ```
-![image](https://user-images.githubusercontent.com/110837675/226803861-9f8c26ab-8901-43b1-9cfd-98fb825a95af.png)
-
-
--The number of one-time payments and installment payments are almost the same, but for installment customers, we need to pay attention and remind them to learn to pay debt and interest on time, to avoid annoying cases. both of us have to call and text them and hpj will both be bothered by my messages and their interest will increase if not paid on time.
-
-
-### 12. Cities that bring in the highest revenue for the company
-
-```php
-# create the bar chart for the payment values
-bar_chart = go.Bar(x=data_sorted['customer_city'], y=df_sorted['payment_value'])
-
-# create the line chart for the cumulative percentage
-line_chart = go.Scatter(x=data_sorted['customer_city'], y=data_sorted['cumulative_percent'], yaxis='y2', name='% Cumulative')
-# set the layout for the chart
-layout = go.Layout(title='Top 10 City That Bring The Highest Revenue', yaxis=dict(title='Payment Value'), yaxis2=dict(title='% Cumulative', overlaying='y', side='right'), width=1150, height=600, margin=dict(l=50, r=50, b=50, t=50), plot_bgcolor='#f8f8f8')
-# create the figure and plot the chart
-fig = go.Figure(data=[bar_chart, line_chart], layout=layout)
-fig.show()
+├── EAD BANK RISK.ipynb   # full analysis with code, charts and commentary
+├── images/               # charts used in this README
+└── README.md
 ```
-Output:
 
-![image](https://user-images.githubusercontent.com/110837675/226806929-250ca3f4-31a0-4148-bb92-cc12ec381595.png)
+---
 
-- The company's revenue is mainly concentrated in these cities, proving that customers are mainly concentrated in these cities for optimization, it is advisable to place warehouses so that transshipment can be saved. Save more and customers when ordering can receive their goods faster and they also save on their shipping costs.
-
-
-### Provide solutions for the company (Đưa ra giải pháp cho công ty)
-# III. Conclusion (Kết luận)
-
-- The company's business situation in the past 3 years has developed strongly when the revenue has increased a lot each year, the number of sales orders has also increased significantly, but the monthly revenue has changed. not crowded when the first months of the year sold a lot of orders, but conversely, the months at the end of the year, the revenue decreased more than we need to review to improve this. For product groups that bring high revenue to the company, it is necessary to focus resources to develop more strongly because it is their strength, and for installment customers, employees need to pay attention and reminding them to pay their debts and interest on time, in addition, taking care of customers who bring high revenue to the company is also very important because they are the lifeblood of the company, so it is necessary to have a customer care team. special for these people.
-
-Areas where the company can improve: (Các lĩnh vực mà công ty có thể cải thiện)
-
-  - The first is that the product and seller id have low ratings, this is the first important thing the company needs to improve, the company needs to remind about the seller id has to improve for the items that are damaged. low rating, because customers often have the phenomenon of following the crowd when the product rating is so low, it will make the customers behind them feel afraid about making a purchase decision, maybe they will give up the product service. products to choose a service to buy from another company. In order to improve this, it is necessary to collect and listen to all customer opinions about the product, thereby improving the product to suit the market needs and customers' needs.
-  
-  
-  The second is about taking care of customers that bring high profits to the company, because they are a living part of the company, contributing very high revenue to the company, in order to retain them, it is necessary to have a caring team. Special customer care for these customers, need to regularly email or call to ask them about our products, in addition we can create special vouchers based on customers This is to retain them and stimulate them to buy their products, as mentioned above, customers often follow the phenomenon of the majority. Therefore, when a business satisfies the existing group of customers, these people. will act as an intermediary to introduce products/services to his acquaintances. Unwittingly, loyal customers have become salespeople for the products of the businesses they trust.
-    
-    
-  -Thirdly, about the installment customers, the company needs to pay attention to this group of installment customers. It needs to notify the customer care department to regularly pay attention and see if they have paid their debt and interest on time. or not, remind them, to overcome this situation, we can create promotions for customers who pay once to stimulate them to buy and pay once.
-  
-  
-  
-[Click the link to view the dashboard](https://app.powerbi.com/groups/7ddb72d0-2e02-4a0e-b5c4-8d1493524633/reports/9cd9c119-a222-4fe1-93c3-58cc08bf4a82/ReportSection)
-   
-   
-
-
-
-
+**Author:** Bui Anh Kiet – Master's student in Big Data, Poland · open to Data Analyst / BI roles
